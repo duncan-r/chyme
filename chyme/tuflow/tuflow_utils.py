@@ -68,7 +68,7 @@ def split_space(instruction, clean=True, lower=False):
     return split_on_char(instruction, '\s', clean=clean, lower=lower)
 
 
-def remove_comment(line):
+def remove_comment(line, return_comment=False):
     """Remove any comments from the file command.
     
     Args:
@@ -78,8 +78,11 @@ def remove_comment(line):
         str - line with comments removed.
     """
     line = line.replace('#', '!')
-    line = line.split('!', 1)[0]
-    return line
+    line, comment = line.split('!', 1)
+    if return_comment:
+        return line, comment
+    else:
+        return line
 
 
 def split_line(line):

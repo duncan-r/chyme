@@ -1,0 +1,11 @@
+Material ID,Manning's n,Infiltration Parameters,Land Use Hazard ID,! Description
+1,0.03,,,!Default material
+5,"0.05,0.2,0.1,0.03",,,!Parkland
+11,Grass.csv|Grass Firm Stand <50mm,"10,2",,!Short grass
+12,Grass.csv| Grass Firm Stand 50 - 150 mm,"10,2",,!Long grass
+21,Trees.csv|Depth| Trees light underbrush,"20,2",,!Light undergrowth
+22,Trees.csv|Depth| Trees dense underbrush,"25,2",,!Dense undergrowth
+31,Pavement.csv,"0,0",,! Roads
+32,VxD:0.5,"0,0",,! VxD stuff
+33,"Log:1,0.35,0.1","0,0",,! Log stuff 1
+34,Log:1 0.35 0.1,"0,0",,! Log stuff 2

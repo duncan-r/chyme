@@ -39,3 +39,26 @@ def remove_multiple_whitespace(in_str, keep_special_chars=False):
         return ' '.join(in_str.split())
     else:
         re.sub(' {2,}', ' ', in_str)
+        
+
+def convert_str_to_int_or_float(number_str):
+    """Convert a number in string format to the correct numerical type.
+    
+    If it's an integer, an integer will be returned. If it is a floating point type, a
+    float will be returned.
+    
+    If the string cannot be converted to a number, the original value will be returned.
+    
+    Return:
+        tuple - (result, success (bool)) 
+    """
+    success = True
+    try:
+        try:
+            val = int(number_str)
+        except ValueError:
+            val = float(number_str)
+    except Exception:
+        success = False
+        val = number_str
+    return val, success
