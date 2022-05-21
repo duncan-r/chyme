@@ -8,6 +8,8 @@
  Created:
     7 May 2022
 """
+import logging
+logger = logging.getLogger(__name__)
 
 import os
 
@@ -137,7 +139,6 @@ class TuflowMaterials():
             raise AttributeError ('Materials file must be either tmf or csv format')
         
         self.header_names = header_names
-        # self.data = data
         self.headers_as_read = kwargs.get('headers_as_read', None)
             
         self._check_ids_unique(data)
@@ -150,8 +151,51 @@ class TuflowMaterials():
                 raise ValueError ('Materials IDs must be unique!')
             found_ids.append(d.mat_id)
     
+
+class TuflowBCDbaseEntry():
+
+    # Data type constants
+    DT_CSV          = 0     # CSV data used for source
+    DT_TS1          = 1     # TS1 data used for source
+    DT_CONSTANT     = 2     # No source file, constant value in column_2
     
-class BCDbase():
+    def __init__(self, name, source, parent_path=None, **kwargs):
+        
+        # Work out what kind of 'source' data we are handling
+        # TUFLOW requires the extension, so it's safe to use for logic
+        if '.ts1' in source:
+            self.data_type = self.DT_TS1
+        elif '.csv' in source:
+            self.data_type = self.DT_CSV
+        elif source.strip() == '':
+            self.data_type = self.DT_CONSTANT
+        else:
+            raise ValueError('Source type not currently supported: '.format(source))
+
+        self.name = name
+        self.source = source
+        self.parent_path = parent_path
+
+        #
+        # kwargs
+        #
+        self.column_1 = kwargs.get('column_1', '')
+        self.column_2 = kwargs.get('column_2', '')
+        
+        # Note: these columns are note used if 'source' is blank
+        self.add_col_1 = kwargs.get('add_col_1', 0)
+        self.mult_col_2 = kwargs.get('mult_col_2', 1)
+        self.add_col_2 = kwargs.get('add_col_2', 0)
+
+        self.column_3 = kwargs.get('column_3', '')
+        self.column_4 = kwargs.get('column_4', '')
+        
+        # Check data requirements
+        if self.data_type == self.DT_CONSTANT and not self.column_2:
+            raise ValueError('column_2 must contain a value if no source data provided')
+        
+    
+class TuflowBCDbase():
     
     def __init__(self, input_path, data, header_names, **kwargs):
         self.input_path = input_path
@@ -167,6 +211,121 @@ class TPCData():
     
     def __init__(self, input_path, data):
         self.input_path = input_path
+
+        # Metadata
+        self.format_version = data.get('format version')
+        self.units = data.get('units')
+        self.run_name = data.get('simulation id')
+        self.time_series_format = data.get('time series output format')
+        
+        # Gis data
+        self.gis_plot_points = data.get('gis plot layer points')
+        self.gis_plot_lines = data.get('gis plot layer lines')
+        self.gis_plot_regions = data.get('gis plot layer regions')
+        self.gis_plot_objects = data.get('gis plot layer objects')
+        
+        # Node/channel counts and information
+        self.node_count_1d = data.get('number 1d nodes')
+        self.channel_count_1d = data.get('number 1d channel')
+        self.node_data_1d = data.get('1d node info')
+        self.channel_data_1d = data.get('1d channel info')
+
+        # 1D node results
+        self.node_max_1d = data.get('1d node maximums')
+        self.water_levels_1d = data.get('1d water levels')
+        self.energy_levels_1d = data.get('1d energy levels')
+        self.mass_balance_1d = data.get('1d mass balance errors')
+        self.node_regime_1d = data.get('1d node regime')
+        
+        # 1d channel results
+        self.channel_max_1d = data.get('1d channel maximums')
+        self.flows_1d = data.get('1d flows')
+        self.velocities_1d = data.get('1d velocities')
+        self.flow_areas_1d = data.get('1d flow areas')
+        self.channel_losses_1d = data.get('1d channel losses')
+        self.channel_regime_1d = data.get('1d channel regime')
+
+        # Results reporting
+        # Points
+        self.result_points_count = data.get('number reporting location points')
+        self.result_points_water_levels = data.get('reporting location points water levels')
+        self.result_points_maximums = data.get('reporting location points maximums')
+        # Lines
+        self.result_lines_count = data.get('number reporting location lines')
+        self.result_lines_water_levels = data.get('reporting location lines water levels')
+        self.result_lines_maximums = data.get('reporting location lines maximums')
+        # Regions
+        self.result_regions_count = data.get('number reporting location regions')
+        self.result_regions_water_levels = data.get('reporting location regions water levels')
+        self.result_regions_maximums = data.get('reporting location regions maximums')
+        
+        # TODO: Need to check and handle these a bit differently, I think
+        # PO output
+        # The variables are a tuple of (relative path, number of results)
+        self.po_point_water_level_2d = data.get('2d point water level')
+        self.po_line_flow_2d = data.get('2d line flow')
+
+
+class TuflowResultsNodeDataEntry():
+    
+    def __init__(self, data, **kwargs):
+        self.row_id = data['row_id']                # Unique ID (not sure what this is?)
+        self.node = data['node']                    # Node name
+        self.bed_level = data['bed_level']          # Bed level (mAD)
+        self.top_level = data['top_level']          # Top section data level (mAD)
+        self.num_channels = data['num_channels']    # Number of connecting channels
+        self.channels = data['channels']            # List of connecting channel names
+        
+        if self.num_channels != len(self.channels):
+            logger.warning('Number of channels does not match channel node list length')
+            logger.warning('Setting number of channels to channel list length')
+            self.num_channel = self.channels
+
+
+class TuflowResultsNodeMaxEntry():
+    
+    def __init__(self, data, **kwargs):
+        self.row_id = data['row_id']
+
+        # node or channel name
+        self.node = data['id']
+
+        # dict of max values and times for different result types
+        self.max_data = data['max_data']
+
+
+class TuflowResultsNodeData():
+    
+    def __init__(self, filepath, data, **kwargs):
+        self.filepath = filepath
         self.data = data
         
         
+class TuflowResultsChannelDataEntry():
+    
+    def __init__(self, data, **kwargs):
+        self.row_id = data['row_id']                # Unique ID (not sure what this is?)
+        self.channel = data['channel']              # Channel name
+        self.us_node = data['us_node']              # Upstream node reference
+        self.ds_node = data['ds_node']              # Downstream node reference
+        self.us_channel = data['us_channel']        # Upstream channel reference
+        self.ds_channel = data['ds_channel']        # Downstream channel reference
+        self.flags = data['flags']                  # Channel type (S, BB, W, etc)
+        self.length = data['length']                # Channel length
+        self.form_loss = data['form_loss']          # Form loss coefficient
+        self.n_or_cd = data['n_or_cd']              # Roughness of discharge coeff, etc
+        self.p_slope = data['p_slope']              # % slope
+        self.us_invert = data['us_invert']          # Channel upstream invert
+        self.ds_invert = data['ds_invert']          # Channel downstream invert
+        self.lb_us_invert = data['lb_us_obvert']    # Left bank upstream elevation
+        self.rb_us_invert = data['rb_us_obvert']    # Right bank upstream elevation
+        self.lb_ds_invert = data['lb_ds_obvert']    # Left bank downstream elevation
+        self.rb_ds_invert = data['rb_ds_obvert']    # Right bank downstream elevation
+        self.p_blockage = data['p_blockage']        # % blockage
+
+
+class TuflowResultsChannelData():
+    
+    def __init__(self, filepath, data, **kwargs):
+        self.filepath = filepath
+        self.data = data

@@ -11,11 +11,14 @@
 
 import logging
 import chyme
+from chyme.tools.data_structures import TuflowResultsNodeMaxEntry
 logger = logging.getLogger(__name__)
 
 import csv
 import itertools
+import numpy
 import os
+import re
 
 from chyme.utils import logsettings as logset
 from chyme.tuflow import loader as tuflow_loader
@@ -166,16 +169,12 @@ def load_tuflow_materials_csv(mat_path, **kwargs):
     """
     
     def process_n_col(data):
-        # # Default value, just return
-        # if data == []:
-        #     return [], True
 
         data = data.replace('"', '')
         rough_data = None
         
         # "log" values with Ks, Kappa and n-limit values
         if 'log:' in data.lower():
-            # output = ['log.'] 
             data = data[4:]
             # Can be comma or space delimited
             # Seriously, really - come on man, just pick one!
@@ -491,13 +490,20 @@ def load_tuflow_bcdbase(db_path):
                     if low_line in header_col_lookup_keys:
                         header_cols[header_col_lookup[low_line]] = i
         else:
-            row = {}
+            # Setup defaults
+            add_col_1 = 0
+            add_col_2 = 0
+            mult_col_2 = 1
+            column_1 = ''
+            column_2 = ''
+            column_3 = ''
+            column_4 = ''
             # These must contain values
             try:
-                row['name'] = line[header_cols['name']].strip()
-                row['source'] = line[header_cols['source']].strip()
-                row['column_1'] = line[header_cols['column_1']].strip()
-                row['column_2'] = line[header_cols['column_2']].strip()
+                name = line[header_cols['name']].strip()
+                source = line[header_cols['source']].strip()
+                column_1 = line[header_cols['column_1']].strip()
+                column_2 = line[header_cols['column_2']].strip()
             except IndexError:
                 logger.error('Cannot find name, source, column 1 or column 2 entries in: {}'.format(
                     os.path.split(db_path)[1]
@@ -507,39 +513,45 @@ def load_tuflow_bcdbase(db_path):
             # These may contain values. Set to defaults if not
             try:
                 val, success = chyme_utils.convert_str_to_int_or_float(line[header_cols['add_col_1']].strip())
-                row['add_col_1'] = val if success else 0
+                if success: add_col_1 = val
             except IndexError:
-                row['add_col_1'] = 0
+                pass
             try:
                 val, success = chyme_utils.convert_str_to_int_or_float(line[header_cols['mult_col_2']].strip())
-                row['mult_col_1'] = val if success else 1
+                if success: mult_col_2 = val
             except IndexError:
-                row['mult_col_2'] = 1
+                pass
             try:
                 val, success = chyme_utils.convert_str_to_int_or_float(line[header_cols['add_col_2']].strip())
-                row['add_col_2'] = val if success else 0
+                if success: add_col_2 = val
             except IndexError:
-                row['add_col_2'] = 0
+                pass
             try:
-                row['column_3'] = line[header_cols['column_3']].strip()
+                column_3 = line[header_cols['column_3']].strip()
             except IndexError:
-                row['column_3'] = ''
+                pass
             try:
-                row['column_4'] = line[header_cols['column_4']].strip()
+                column_4 = line[header_cols['column_4']].strip()
             except IndexError:
-                row['column_4'] = ''
+                pass
                 
             # Process and validate the inputs
-            row['name'], success = process_name(row['name'])
-            row['source'], success = process_source(row['source'])
-            if row['column_2'] == '' and row['source'] == '':
+            name, success_name = process_name(name)
+            source, success_source = process_source(source)
+            if not success_name or not success_source:
+                logger.error('Failed to pass name or source input for: '.format(db_path))
+
+            if column_2 == '' and source == '':
                 logger.error('If no source entry is supplied, a constant value must be given in column 2')
                 return None, False
-                
-            row_data.append(row)
             
+            row_data.append(data_structures.TuflowBCDbaseEntry(
+                name, source, parent_path=db_path, column_1=column_1, column_2=column_2, 
+                add_col_1=add_col_1, mult_col_2=mult_col_2, add_col_2=add_col_2,
+                column_3=column_3, column_4=column_4
+            ))
 
-    bc_dbase = data_structures.BCDbase(
+    bc_dbase = data_structures.TuflowBCDbase(
         db_path, row_data, list(header_cols.keys()), header_cols_as_read=header_cols_as_read
     ) 
     return bc_dbase, True
@@ -786,10 +798,219 @@ def load_tuflow_tpc(input_path, **kwargs):
         lines = infile.readlines()
     
     data = {}
+    bracket_match = re.compile('\[\d+\]')
     for line in lines:
         command, variable = tuflow_utils.split_line(line)
-        data[command] = variable
+        
+        # Some tpc command contain bracketed numbers (e.g. "[18]") after the command
+        # string
+        if re.search(bracket_match, command):
+            cmd_split = command.split('[')
+            command = cmd_split[0].strip().lower()
+            cmd_count = cmd_split[1].replace('[', '').replace(']', '').strip()
+            variable = (variable, cmd_count)
+        data[command.lower()] = variable
         
     tpc = data_structures.TPCData(input_path, data)
     return tpc
+
+
+def load_tuflow_timeseries_csv(input_path, column_names=None, no_data_val=-99999, use_sensible_names=True):
+    """Load TUFLOW timeseries results.
     
+    Will check for a 'time' column by string compare and all data will be converted to 
+    Float32 format. If expected characters (from TUFLOW) are find in the column names and
+    the use_sensible_names value is True, the column names will be stripped of all 
+    unnecessary additional data and only the node ID kept.
+
+    These can be any file in the format of something like::
+    
+        row num    |    time    |    data1    |    data2    |    ...
+        1          |    0       |    0        |    0        |    ...
+        2          |    0.5     |    1.2      |    0.6      |    ...
+        3          |    0.7     |    1.3      |    0.9      |    ...
+        ...
+        
+    Return:
+        numpy.ndarray - containing Float32 data.
+    """
+    
+    headers = []
+    start_row = 0
+    with open(input_path, 'r') as infile:
+        line = infile.readline().strip()
+        while line == '':
+            start_row += 1
+            line = infile.readline().strip()
+
+        headers = line.split(',')
+        
+    use_cols = None
+    if column_names:
+        use_cols = [i for i, name in enumerate(headers) if name in column_names]
+    
+    sens_name_lookup = ['Q', 'H', 'V', 'D', 'SQ']
+    sensible_names = []
+    if use_sensible_names:
+        for i, name in enumerate(headers):
+            name = name.replace('"', '')
+            # temp = name[:2]
+            if 'time' in name.lower():
+                sensible_names.append('time')
+            elif name[:2].strip() in sens_name_lookup:
+                split_name = name.split()
+                sensible_names.append(split_name[1])
+            else:
+                sensible_names.append(name)
+        
+    data = numpy.genfromtxt(
+        input_path, delimiter=',', dtype=numpy.float32, skip_header=start_row, 
+        filling_values=no_data_val, names=True, usecols=use_cols
+    )
+    data.dtype.names = tuple(sensible_names)
+    q=0
+    return data
+
+
+def load_tuflow_mb_csv(input_path):
+    """Load TUFLOW mass balance (_MB, _MB1D and _MB2D) results.
+        
+    Return:
+        numpy.ndarray - containing Float32 data.
+    """
+    mb_cols = []
+    if '_MB1D.csv' in input_path:
+        mb_cols = [
+            'time', '1d_dom', 'hv_in', 'hv_out', 'qv_in', 'qv_out', 'qrv_in', 'qrv_out', 'x1dh_v_in', 
+            'x1dh_v_out', 'x1dq_v_in', 'x1dq_v_out', 'sx2d_v_in', 'sx2d_v_out', 'hx2d_v_in', 
+            'hx2d_v_out', 'q2d_v_in', 'q2d_v_out', 'vol_io', 'dvol', 'vol_error', 'p_qme',
+            'total_vol', 'cum_vol_io', 'cum_vol_error', 'p_cum_me', 'p_cum_qme'
+        ]
+        
+    elif '_MB2D.csv' in input_path:
+        mb_cols = [
+            'time', '1d_dom', 'hv_in', 'hv_out', 'eshx_v_in', 'eshx_v_out', 'x1dhx_v_in', 
+            'x1dhx_v_out', 'ss_v_in', 'ss_v_out', 'essx_v_in', 'essx_v_out', 'x1dsx_v_in', 
+            'x1dsx_v_out', 'vol_io', 'dvol', 'vol_error', 'p_qme', 'total_vol',
+            'cum_v_io', 'cum_v_error', 'p_cum_me', 'p_cum_qme'
+        ]
+        
+    elif '_MB.csv' in input_path:
+        mb_cols = [
+            'time', '1D_2D', 'h_vol_in', 'h_vol_out', 'q_vol_in', 'q_vol_out', 'total_vol_in',
+            'total_vol_out', 'vol_io_minus', 'dvol', 'vol_error', 'p_qme', 'vol_io_plus',
+            'total_vol', 'cum_vol_io', 'cum_vol_err', 'p_cum_me', 'p_cum_qme', 
+        ]
+    else:
+        raise ValueError('Unrecognised file format for TUFLOW MB csv file')
+    
+    
+    data = numpy.genfromtxt(
+        input_path, delimiter=',', dtype=numpy.float32, filling_values=0,
+        names=True
+    )
+    data.dtype.names = tuple(mb_cols)
+    q=0
+    return data
+
+
+def load_tuflow_results_node_csv(input_path):
+    """Load the contents of the TUFLOW 1d_Node csv file."""
+    
+    lines = []
+    with open(input_path, 'r') as infile:
+        lines = infile.readlines()
+    lines = lines[1:]
+
+    rows = {}
+    for l in lines:
+        line = l.split(',')
+        data = {}
+        data['row_id']          = int(line[0])
+        data['node']            = line[1].replace('"', '').strip()
+        data['bed_level']       = float(line[2])
+        data['top_level']       = float(line[3])
+        data['num_channels']    = int(line[4])
+        data['channels']        = [chan.strip() for chan in line[5:]]
+        rows[data['node']] = data_structures.TuflowResultsNodeDataEntry(data)
+        
+    node_data = data_structures.TuflowResultsNodeData(input_path, rows)
+    return node_data
+
+
+def load_tuflow_results_channel_csv(input_path):
+    """Load the contents of the TUFLOW 1d_Chan csv file."""
+    
+    lines = []
+    with open(input_path, 'r') as infile:
+        lines = infile.readlines()
+    lines = lines[1:]
+
+    rows = {}
+    for l in lines:
+        line = l.split(',')
+        data = {}
+        data['row_id']          = int(line[0])
+        data['channel']         = line[1].replace('"', '').strip()
+        data['us_node']         = line[2].replace('"', '').strip()
+        data['ds_node']         = line[3].replace('"', '').strip()
+
+        us_channel = line[4].replace('"', '').strip()
+        ds_channel = line[5].replace('"', '').strip()
+        data['us_channel'] = '' if us_channel == '------' else us_channel
+        data['ds_channel'] = '' if ds_channel == '------' else ds_channel
+
+        data['flags']           = line[6].replace('"', '').strip()
+        data['length']          = float(line[7])
+        data['form_loss']       = float(line[8])
+        data['n_or_cd']         = float(line[9])
+        data['p_slope']         = float(line[10])
+        data['us_invert']       = float(line[11])
+        data['ds_invert']       = float(line[12])
+        data['lb_us_obvert']    = float(line[13])
+        data['rb_us_obvert']    = float(line[14])
+        data['lb_ds_obvert']    = float(line[15])
+        data['rb_ds_obvert']    = float(line[16])
+        data['p_blockage']      = float(line[17])
+        rows[data['channel']] = data_structures.TuflowResultsChannelDataEntry(data)
+        
+    node_data = data_structures.TuflowResultsChannelData(input_path, rows)
+    return node_data
+
+
+def load_tuflow_results_max_csv(input_path):
+    """Load TUFLOW max results (Cmx and Nmx) type files."""
+    
+    lines = []
+    with open(input_path, 'r') as infile:
+        lines = infile.readlines()
+    
+    entries = {}
+    headers = []
+    split_row = lines[0].split(',')
+    # Grab every other column starting at column 2
+    # Results are in the format: rowid, name, res1, res1 time, res2, res2 time, ...
+    for i in range(2, len(split_row), 2):
+        if len(split_row) > i + 1:
+            headers.append(split_row[i])
+
+    lines = lines[1:]
+    for l in lines:
+        line = l.split(',')
+        row_id = line[0]
+        result_id = line[1]
+        temp_data = {}
+        hcount = 0
+        for i in range(2, len(line), 2):
+            temp_data[headers[hcount]] = {
+                'max': float(line[i].strip()), 'time': float(line[i+1].strip())
+            }
+            hcount += 1
+        
+        entries[result_id] = TuflowResultsNodeMaxEntry({
+            'row_id': row_id, 'id': result_id, 'max_data': temp_data
+        })
+        
+    max_data = data_structures.TuflowResultsNodeData(input_path, entries)
+    return max_data
+        
