@@ -9,6 +9,7 @@
     7 May 2022
 """
 
+import configparser
 import os
 
 from tests import CHYME_DIR, TESTS_DIR, DATA_DIR
@@ -92,8 +93,60 @@ def load_tuflow_results_max_csv(hartwell_folder):
     data = loaders.load_tuflow_results_max_csv(filepath)
     
     q=0
-
     
+    
+def load_fmp_ief():
+    """Load contents of an FM event (IEF) file.
+    
+    Would be much cleaner to use the ConfigParser class in the standard library.
+    Unfortunately the ief files use a non-complient ";" character to prefix the title of
+    the IED file. Generally this is used as a comment. Because the line doesn't contain
+    an "=" it will fail if you turn comments off, so we have to parse this ourselves.
+    
+    Return:
+        Ief - containing the loaded data.
+    """
+    ief_file = os.path.join(DATA_DIR, 'fmp', 'ief', 'Model_1.ief')
+    
+    lines = []
+    with open(ief_file, 'r') as infile:
+        lines = infile.readlines()
+
+    ief_kwargs = {}
+    ied_data = []
+    snapshots = []
+    for line in lines:
+        line = line.strip()
+        
+        if line.startswith('[') and line.endswith(']'):
+            continue
+        elif line.startswith(';'):
+            ied_data.append({'title': line.replace(';', ''), 'file': ''})
+            continue
+        
+        command, value = line.split('=')
+        command = command.lower()
+        
+        # Always comes after the title, so it should be safe to assume that the index exists
+        if command == 'eventdata':
+            ied_data[-1]['file'] = value
+            
+        # Same ordering and assumption here
+        elif command == 'snapshottime':
+            snapshots.append({'time': value, 'file': ''})
+        elif command == 'snapshotfile':
+            snapshots[-1]['file'] = value
+        
+        # Everything else is handled the same way 
+        else:
+            ief_kwargs[command] = value
+        
+    ief_kwargs['ied_data'] = ied_data
+    ief_kwargs['snapshot_data'] = snapshots
+    ief = data_structures.Ief(ief_file, **ief_kwargs)
+    
+    return ief
+            
 
 if __name__ == '__main__':
     # Hartwell results path for testing
@@ -105,4 +158,5 @@ if __name__ == '__main__':
     # load_timeseries_csv(hartwell_folder)
     # load_tpc(hartwell_folder)
     # load_tuflow_results_max_csv(hartwell_folder)
-    load_mb_csv(hartwell_folder)
+    # load_mb_csv(hartwell_folder)
+    load_fmp_ief()

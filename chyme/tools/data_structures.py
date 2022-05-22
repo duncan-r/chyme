@@ -329,3 +329,36 @@ class TuflowResultsChannelData():
     def __init__(self, filepath, data, **kwargs):
         self.filepath = filepath
         self.data = data
+        
+        
+class Ief():
+    
+    def __init__(self, filepath, **kwargs):
+        self.filepath = filepath
+        
+        self.associate_paths = {
+            'dat': kwargs.get('datafile', ''), 'results': kwargs.get('results', ''),
+            'initial_conditions': kwargs.get('initial_conditions', ''),
+            '2dfile': kwargs.get('2dfile')
+        }
+        self.ied_data = kwargs.get('ied_data', [])
+        self.snapshot_data = kwargs.get('snapshot_data', [])
+        
+        self.event_details = {
+            'runtype': '', 'start': 0, 'finish': 0, 'timestep': 1, 'maximumtimestep': 1,
+            'saveinterval': 300, 'maxiter': 7, 'miniter': 3, 'pcmxvd': 10, 'psdeep': 2, 
+            'volumeoutinterval': 3600, 'psmannings': 1000, 'reservoiremptyfactor': 1,
+            'newmatrixdummy': 0, 'matrixdummy': 0, 'minimumdepth': 0.15, 'slot': 0,
+            'extratimesteps': 0, 'icsfrom': 2, 'outputvolumes': 2, 'globalslotroughness': 1,
+            'warmup': 1, 'refinebridgesecprops': 0, 'solvedhequalszeroatstart': 0,
+            'rulesattimezero': 0, 'rulesonfirstiteraction': 1, 'resettimesafterpos': 0,
+            'usefpsmodularlimit': 0, 'useremoteq': 0, 'resrivervolume': 1, '2dflow': 0,
+            '2dscheme': None, '2dtimestep': 1, '2dcorrector': 1, 'title': '',
+        }
+        kwarg_keys = kwargs.keys()
+        for evt in self.event_details:
+            if evt in kwarg_keys:
+                self.event_details[evt] = kwargs[evt]
+        
+
+

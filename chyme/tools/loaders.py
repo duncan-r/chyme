@@ -910,7 +910,6 @@ def load_tuflow_mb_csv(input_path):
         names=True
     )
     data.dtype.names = tuple(mb_cols)
-    q=0
     return data
 
 
