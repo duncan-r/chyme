@@ -14,7 +14,10 @@ import os
 
 from tests import CHYME_DIR, TESTS_DIR, DATA_DIR
 
-from chyme.tools import loaders as loaders, data_structures
+from chyme.tools import loaders as loaders, data_structures, review
+from chyme.flood_modeller import files as fm_files
+from chyme.flood_modeller import core as fm_core
+from chyme.tools.review import api as review_api
 
     
 def convert_slash(input, to_forward=True):
@@ -26,6 +29,7 @@ def convert_slash(input, to_forward=True):
     output = input.replace(original, after)
     print(output)
 
+
 def load_materials():
     filepath_tmf = os.path.join(DATA_DIR, 'estry_tuflow', 'model', 'Materials_TMF.tmf')
     filepath_csv = os.path.join(DATA_DIR, 'estry_tuflow', 'model', 'MaterialsCSV_AllFormats.csv')
@@ -33,13 +37,11 @@ def load_materials():
     # csv_file, success = loaders.load_tuflow_materials_csv(filepath_csv)
     # mat_file, success = loaders.load_tuflow_materials(filepath_tmf)
     mat_file2, success = loaders.load_tuflow_materials(filepath_csv)
-    q=0
     
 
 def load_bcdbase():
     filepath = os.path.join(DATA_DIR, 'estry_tuflow', 'bc_dbase', 'Model_1D2D.csv')
     bcdbase, success = loaders.load_tuflow_bcdbase(filepath)
-    q=0
     
 
 def load_datafile_csv():
@@ -52,8 +54,8 @@ def load_datafile_csv():
 
     # filepath = os.path.join(DATA_DIR, 'estry_tuflow', 'model', 'Pavement.csv')
     # data, success = loaders.load_tuflow_datafile_csv(filepath, lookup_names={'pavement d50 1.22mm': 1})
-    q=0
     
+
 def load_tpc(hartwell_folder):
     # filepath = "2d/plot/062990_EST_BAS_DES_C100_123.tpc"
     filepath = os.path.join(hartwell_folder, "2d/plot/062990_EST_BAS_DES_C100_123.tpc")
@@ -63,7 +65,6 @@ def load_tpc(hartwell_folder):
     
     node_data = loaders.load_tuflow_results_node_csv(node_file)
     channel_data = loaders.load_tuflow_results_channel_csv(channel_file)
-    q=0
 
 
 def load_timeseries_csv(hartwell_folder):
@@ -74,7 +75,6 @@ def load_timeseries_csv(hartwell_folder):
     
     time = data['time']
     flow = data['1.0001']
-    q=0
     
 
 def load_mb_csv(hartwell_folder):
@@ -83,16 +83,12 @@ def load_mb_csv(hartwell_folder):
     filepath = os.path.join(hartwell_folder, "1d/062990_EST_BAS_DES_C100_123_MB1D.csv")
     data = loaders.load_tuflow_mb_csv(filepath)
     
-    q=0
-    
 
 def load_tuflow_results_max_csv(hartwell_folder):
     filepath = os.path.join(hartwell_folder, "2d/plot/csv/062990_EST_BAS_DES_C100_123_1d_Cmx.csv")
     # filepath = os.path.join(hartwell_folder, "2d/plot/csv/062990_EST_BAS_DES_C100_123_1d_Nmx.csv")
     
     data = loaders.load_tuflow_results_max_csv(filepath)
-    
-    q=0
     
     
 def load_fmp_ief():
@@ -107,45 +103,31 @@ def load_fmp_ief():
         Ief - containing the loaded data.
     """
     ief_file = os.path.join(DATA_DIR, 'fmp', 'ief', 'Model_1.ief')
+    ief = loaders.load_fmp_ief(ief_file)
     
-    lines = []
-    with open(ief_file, 'r') as infile:
-        lines = infile.readlines()
+    
+def review_model():
+    # dat_path = "C:/Users/ermev/Documents/Main/Company/3_Technical/Dev/Qgis_Test_Workspaces/Test_FM/32113_trim_model_9.dat"
+    # fmp = fm_core.FloodModellerDomain(dat_path)
 
-    ief_kwargs = {}
-    ied_data = []
-    snapshots = []
-    for line in lines:
-        line = line.strip()
-        
-        if line.startswith('[') and line.endswith(']'):
-            continue
-        elif line.startswith(';'):
-            ied_data.append({'title': line.replace(';', ''), 'file': ''})
-            continue
-        
-        command, value = line.split('=')
-        command = command.lower()
-        
-        # Always comes after the title, so it should be safe to assume that the index exists
-        if command == 'eventdata':
-            ied_data[-1]['file'] = value
-            
-        # Same ordering and assumption here
-        elif command == 'snapshottime':
-            snapshots.append({'time': value, 'file': ''})
-        elif command == 'snapshotfile':
-            snapshots[-1]['file'] = value
-        
-        # Everything else is handled the same way 
-        else:
-            ief_kwargs[command] = value
-        
-    ief_kwargs['ied_data'] = ied_data
-    ief_kwargs['snapshot_data'] = snapshots
-    ief = data_structures.Ief(ief_file, **ief_kwargs)
+    tuflow_path = os.path.join(DATA_DIR, 'estry_tuflow', 'runs', 'Model_1D2D.tcf')
+    # loader = loaders.load_model(tuflow_path)
+    # file_check = review_api.check_files(loader.model)
+
+    # root_folder = "C:/Users/ermev/Documents/Main/Company/3_Technical/Dev/Chyme/chyme/tests/data/estry_tuflow"
+    # folder_map = review_api.map_model_directory(root_folder)
     
-    return ief
+    # results_folder = "C:/Users/ermev/Documents/Main/Company/3_Technical/Dev/Chyme/chyme/tests/data/estry_tuflow/results"
+    # results_folder = "C:/Users/ermev/Documents/Main/Company/1_Projects/2_Open/P2112002_HighfurlongBrook_FMS/Technical/Hydraulics/Hartwell/model/Results/133/BAS/C100"
+    # results_files = review_api.find_results_files(results_folder)
+    # from pprint import pprint
+    # pprint(results_files)
+    
+    loader = loaders.load_model(tuflow_path)
+    section_check = review_api.check_sections(loader.model)
+    
+    
+    q=0
             
 
 if __name__ == '__main__':
@@ -159,4 +141,5 @@ if __name__ == '__main__':
     # load_tpc(hartwell_folder)
     # load_tuflow_results_max_csv(hartwell_folder)
     # load_mb_csv(hartwell_folder)
-    load_fmp_ief()
+    # load_fmp_ief()
+    review_model()

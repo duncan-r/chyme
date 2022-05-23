@@ -78,11 +78,11 @@ def remove_comment(line, return_comment=False):
         str - line with comments removed.
     """
     line = line.replace('#', '!')
-    line, comment = line.split('!', 1)
-    if return_comment:
-        return line, comment
+    line_comment = line.split('!', 1)
+    if return_comment and len(line_comment) > 1:
+        return line_comment[0], line_comment[1]
     else:
-        return line
+        return line_comment[0]
 
 
 def split_line(line):

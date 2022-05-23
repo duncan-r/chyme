@@ -47,6 +47,7 @@ class ModelLoader():
         self.input_path = filepath
         self.kwargs = kwargs
         self._message_listener = LoadListener()
+        self.model = None
         
     def load(self):
         self.setup()
@@ -64,9 +65,29 @@ class ModelLoader():
     
     def load_messages(self):
         return self._message_listener.get_logs()
+    
+    
+class TuflowModelLoader(ModelLoader):
+    """TODO: This should be in the TUFLOW package."""
+    
+    def load_model(self):
+        se_vals = self.kwargs.pop('se_vals', '')
+        loader = tuflow_loader.TuflowLoader(self.input_path, se_vals=se_vals, **self.kwargs)
+        loader.load()
+        self.model = loader
+    
+
+def load_model(filepath, **kwargs):
+    name_ext = os.path.splitext(filepath)
+    if len(name_ext) < 2:
+        raise ValueError('Path does not contain a file extention: '.format(filepath))
+    
+    if name_ext[1] == '.tcf' or name_ext[1] == '.ecf':
+        loader = load_tuflow_model(filepath, **kwargs)
+        return loader
 
 
-def load_tuflow_model(tcf_path, se_vals='', **kwargs):
+def load_tuflow_model(tcf_path, **kwargs):
     """
     """
     ext_split = os.path.splitext(tcf_path)
@@ -76,6 +97,9 @@ def load_tuflow_model(tcf_path, se_vals='', **kwargs):
         raise AttributeError ('TUFLOW tcf file does not exist')
     
     # Load tuflow model here
+    loader = TuflowModelLoader(tcf_path, **kwargs)
+    loader.load_model()
+    return loader
     
     
 def load_tuflow_materials(mat_path, **kwargs):
@@ -1012,4 +1036,56 @@ def load_tuflow_results_max_csv(input_path):
         
     max_data = data_structures.TuflowResultsNodeData(input_path, entries)
     return max_data
+
+
+def load_fmp_ief(ief_file):
+    """Load contents of an FM event (IEF) file.
+    
+    Would be much cleaner to use the ConfigParser class in the standard library.
+    Unfortunately the ief files use a non-complient ";" character to prefix the title of
+    the IED file. Generally this is used as a comment. Because the line doesn't contain
+    an "=" it will fail if you turn comments off, so we have to parse this ourselves.
+    
+    Return:
+        Ief - containing the loaded data.
+    """
+    
+    lines = []
+    with open(ief_file, 'r') as infile:
+        lines = infile.readlines()
+
+    ief_kwargs = {}
+    ied_data = []
+    snapshots = []
+    for line in lines:
+        line = line.strip()
+        
+        if line.startswith('[') and line.endswith(']'):
+            continue
+        elif line.startswith(';'):
+            ied_data.append({'title': line.replace(';', ''), 'file': ''})
+            continue
+        
+        command, value = line.split('=')
+        command = command.lower()
+        
+        # Always comes after the title, so it should be safe to assume that the index exists
+        if command == 'eventdata':
+            ied_data[-1]['file'] = value
+            
+        # Same ordering and assumption here
+        elif command == 'snapshottime':
+            snapshots.append({'time': value, 'file': ''})
+        elif command == 'snapshotfile':
+            snapshots[-1]['file'] = value
+        
+        # Everything else is handled the same way 
+        else:
+            ief_kwargs[command] = value
+        
+    ief_kwargs['ied_data'] = ied_data
+    ief_kwargs['snapshot_data'] = snapshots
+    ief = data_structures.Ief(ief_file, **ief_kwargs)
+    
+    return ief
         
